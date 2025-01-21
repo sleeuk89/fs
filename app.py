@@ -1,50 +1,51 @@
-# app.py
-
 import streamlit as st
 import requests
 from bs4 import BeautifulSoup
-import nltk
-from nltk.tokenize import word_tokenize
-from nltk.corpus import stopwords
-import spacy
-from sklearn.feature_extraction.text import TfidfVectorizer
 import pandas as pd
 import plotly.express as px
 from collections import Counter
 import re
-import os
+from sklearn.feature_extraction.text import TfidfVectorizer
+import subprocess
+import sys
 
-# Create data directory if it doesn't exist
-if not os.path.exists("data"):
-    os.makedirs("data")
-
-# Set NLTK data path
-nltk.data.path.append("data")
-
-# Download required NLTK data
-try:
-    @st.cache_resource
-    def download_nltk_data():
-        nltk.download('punkt', download_dir='data')
-        nltk.download('stopwords', download_dir='data')
-        nltk.download('averaged_perceptron_tagger', download_dir='data')
-    download_nltk_data()
-except Exception as e:
-    st.error(f"Error downloading NLTK data: {str(e)}")
-
-# Load spaCy model
-@st.cache_resource
-def load_spacy():
+# Install NLTK and download required data
+def setup_nltk():
     try:
-        return spacy.load('en_core_web_sm')
-    except OSError:
-        st.info("Downloading spaCy model...")
-        os.system('python -m spacy download en_core_web_sm')
-        return spacy.load('en_core_web_sm')
+        import nltk
+        nltk.download('punkt')
+        nltk.download('stopwords')
+        nltk.download('averaged_perceptron_tagger')
+        return nltk
+    except Exception as e:
+        st.error(f"Error setting up NLTK: {str(e)}")
+        return None
+
+# Install spaCy and download model
+def setup_spacy():
+    try:
+        import spacy
+        try:
+            nlp = spacy.load('en_core_web_sm')
+        except OSError:
+            subprocess.check_call([sys.executable, "-m", "spacy", "download", "en_core_web_sm"])
+            nlp = spacy.load('en_core_web_sm')
+        return nlp
+    except Exception as e:
+        st.error(f"Error setting up spaCy: {str(e)}")
+        return None
+
+# Initialize NLP components
+@st.cache_resource
+def initialize_nlp():
+    nltk = setup_nltk()
+    nlp = setup_spacy()
+    return nltk, nlp
 
 class SEOAnalyzer:
-    def __init__(self):
-        self.nlp = load_spacy()
+    def __init__(self, nltk, nlp):
+        self.nltk = nltk
+        self.nlp = nlp
         
     def analyze_competitor_content(self, urls):
         all_text = []
@@ -70,6 +71,9 @@ class SEOAnalyzer:
             return feature_names, all_text
     
     def calculate_content_score(self, content, competitor_keywords):
+        if not self.nltk:
+            return 0, {'error': 'NLTK not available'}
+            
         score_breakdown = {
             'length': 0,
             'keyword_usage': 0,
@@ -87,7 +91,7 @@ class SEOAnalyzer:
             
         # Keyword usage score
         if competitor_keywords:
-            content_words = set(word_tokenize(content.lower()))
+            content_words = set(self.nltk.word_tokenize(content.lower()))
             keyword_matches = content_words.intersection(set(competitor_keywords))
             score_breakdown['keyword_usage'] = int((len(keyword_matches) / len(competitor_keywords)) * 40)
         
@@ -109,8 +113,15 @@ def main():
     
     st.title("SEO Content Analyzer")
     
+    # Initialize NLP components
+    nltk, nlp = initialize_nlp()
+    
+    if not nltk or not nlp:
+        st.error("Failed to initialize required NLP components. Please check the logs.")
+        return
+    
     # Initialize analyzer
-    analyzer = SEOAnalyzer()
+    analyzer = SEOAnalyzer(nltk, nlp)
     
     # Create two columns
     col1, col2 = st.columns([6, 4])
@@ -150,26 +161,29 @@ def main():
                 
                 # Display score breakdown
                 st.subheader("Score Breakdown")
-                breakdown_df = pd.DataFrame({
-                    'Category': score_breakdown.keys(),
-                    'Score': score_breakdown.values()
-                })
-                st.bar_chart(breakdown_df.set_index('Category'))
+                if 'error' not in score_breakdown:
+                    breakdown_df = pd.DataFrame({
+                        'Category': score_breakdown.keys(),
+                        'Score': score_breakdown.values()
+                    })
+                    st.bar_chart(breakdown_df.set_index('Category'))
                 
-                # Display keyword suggestions
-                st.subheader("Keyword Suggestions")
-                if competitor_keywords:
-                    content_words = set(word_tokenize(content.lower()))
-                    missing_keywords = set(competitor_keywords) - content_words
-                    
-                    if missing_keywords:
-                        st.write("Consider adding these keywords to your content:")
-                        for keyword in missing_keywords:
-                            st.markdown(f"- {keyword}")
+                    # Display keyword suggestions
+                    st.subheader("Keyword Suggestions")
+                    if competitor_keywords:
+                        content_words = set(nltk.word_tokenize(content.lower()))
+                        missing_keywords = set(competitor_keywords) - content_words
+                        
+                        if missing_keywords:
+                            st.write("Consider adding these keywords to your content:")
+                            for keyword in missing_keywords:
+                                st.markdown(f"- {keyword}")
+                        else:
+                            st.write("Great job! Your content covers most important keywords.")
                     else:
-                        st.write("Great job! Your content covers most important keywords.")
+                        st.warning("No competitor keywords found. Please check the URLs provided.")
                 else:
-                    st.warning("No competitor keywords found. Please check the URLs provided.")
+                    st.error("Error in analysis. Please try again.")
                     
             except Exception as e:
                 st.error(f"An error occurred during analysis: {str(e)}")
