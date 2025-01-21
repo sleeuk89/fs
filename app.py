@@ -3,31 +3,31 @@ import requests
 from bs4 import BeautifulSoup
 import spacy
 from spacy.cli import download
-from openai import ChatCompletion
+import openai
 
-# Function to load spaCy model
+# Function to load the spaCy model
 def load_spacy_model():
     try:
-        # Attempt to load the model
+        # Try to load the model
         return spacy.load("en_core_web_sm")
     except OSError:
-        # Download and load the model if missing
+        # If the model is not found, download and load it
         download("en_core_web_sm")
         return spacy.load("en_core_web_sm")
 
-# Load spaCy model
+# Load the spaCy model
 nlp = load_spacy_model()
 
-# Streamlit app title
+# Streamlit app setup
 st.title("Featured Snippet Opportunity Finder")
-st.markdown("Identify and optimise content for Google's Featured Snippets.")
+st.markdown("Identify and optimise content for Featured Snippets.")
 
 # Input fields
 openai_api_key = st.text_input("Enter your OpenAI API Key", type="password")
 content = st.text_area("Paste your content here:")
 keywords = st.text_input("Enter target keywords (comma-separated):")
 
-# Helper function to analyse content
+# Helper function to analyze content
 def analyse_content(content, keywords):
     doc = nlp(content)
     keywords = [kw.strip().lower() for kw in keywords.split(",")]
@@ -37,7 +37,7 @@ def analyse_content(content, keywords):
             questions.append(sentence.text.strip())
     return questions
 
-# Helper function to scrape Google SERP
+# Helper function to scrape Google SERP for Featured Snippets
 def get_serp_data(query):
     headers = {"User-Agent": "Mozilla/5.0"}
     url = f"https://www.google.com/search?q={query}"
@@ -62,7 +62,7 @@ def generate_optimised_content(question, api_key):
     openai.api_key = api_key
     prompt = f"Write an SEO-optimised answer for the following question to win a Featured Snippet:\n\n{question}"
     try:
-        response = ChatCompletion.create(
+        response = openai.ChatCompletion.create(
             model="gpt-4",
             messages=[{"role": "user", "content": prompt}]
         )
@@ -71,12 +71,12 @@ def generate_optimised_content(question, api_key):
         st.error(f"Error generating content: {e}")
         return None
 
-# Streamlit workflow
+# Workflow for Streamlit app
 if st.button("Find Opportunities"):
     if not openai_api_key or not content or not keywords:
         st.error("Please provide all inputs: OpenAI API key, content, and keywords.")
     else:
-        st.info("Analysing content and fetching Featured Snippet data...")
+        st.info("Analysing content and checking Featured Snippet data...")
         questions = analyse_content(content, keywords)
         opportunities = {}
         
