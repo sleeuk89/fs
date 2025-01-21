@@ -1,98 +1,72 @@
 import streamlit as st
 import requests
 from bs4 import BeautifulSoup
-import spacy
-from spacy.cli import download
 import openai
 
-# Function to load the spaCy model
-def load_spacy_model():
-    try:
-        # Try to load the model
-        return spacy.load("en_core_web_sm")
-    except OSError:
-        # If the model is not found, download and load it
-        download("en_core_web_sm")
-        return spacy.load("en_core_web_sm")
+# Streamlit App Setup
+st.title("Featured Snippet SEO Content Generator")
+st.markdown("""
+    This app helps you generate optimised content to win Featured Snippets on Google.
+    Simply input a target keyword/topic, and the app will scrape Google's Featured Snippet and generate superior content using OpenAI.
+""")
 
-# Load the spaCy model
-nlp = load_spacy_model()
-
-# Streamlit app setup
-st.title("Featured Snippet Opportunity Finder")
-st.markdown("Identify and optimise content for Featured Snippets.")
-
-# Input fields
+# Input field for OpenAI API key and keyword
 openai_api_key = st.text_input("Enter your OpenAI API Key", type="password")
-content = st.text_area("Paste your content here:")
-keywords = st.text_input("Enter target keywords (comma-separated):")
+keyword = st.text_input("Enter target keyword/topic:")
 
-# Helper function to analyze content
-def analyse_content(content, keywords):
-    doc = nlp(content)
-    keywords = [kw.strip().lower() for kw in keywords.split(",")]
-    questions = []
-    for sentence in doc.sents:
-        if sentence.text.strip().endswith("?") or any(keyword in sentence.text.lower() for keyword in keywords):
-            questions.append(sentence.text.strip())
-    return questions
-
-# Helper function to scrape Google SERP for Featured Snippets
-def get_serp_data(query):
+# Function to scrape Google's Featured Snippet for a given keyword
+def get_featured_snippet(keyword):
     headers = {"User-Agent": "Mozilla/5.0"}
-    url = f"https://www.google.com/search?q={query}"
+    url = f"https://www.google.com/search?q={keyword}"
     response = requests.get(url, headers=headers)
     soup = BeautifulSoup(response.text, "html.parser")
     
-    featured_snippet = None
+    # Attempt to find the featured snippet
+    snippet = None
     try:
-        snippet = soup.find("div", class_="BNeawe").text
-        featured_snippet = snippet
+        snippet = soup.find("div", class_="BNeawe iBp4i AP7Wnd").text
     except AttributeError:
-        pass
-    
-    return featured_snippet
+        st.warning("No Featured Snippet found for this keyword.")
+    return snippet
 
-# Helper function to generate optimised content
+# Function to generate optimised content using OpenAI
 def generate_optimised_content(question, api_key):
     if not api_key:
-        st.error("OpenAI API key is required to generate optimised content.")
+        st.error("OpenAI API key is required.")
         return None
-
+    
     openai.api_key = api_key
-    prompt = f"Write an SEO-optimised answer for the following question to win a Featured Snippet:\n\n{question}"
+    prompt = f"Generate an SEO-optimised answer for the following question to win a Featured Snippet:\n\n{question}"
+    
     try:
-        response = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": prompt}]
+        response = openai.Completion.create(
+            engine="text-davinci-003",
+            prompt=prompt,
+            max_tokens=250,
+            temperature=0.7
         )
-        return response['choices'][0]['message']['content']
+        return response['choices'][0]['text'].strip()
     except Exception as e:
         st.error(f"Error generating content: {e}")
         return None
 
-# Workflow for Streamlit app
-if st.button("Find Opportunities"):
-    if not openai_api_key or not content or not keywords:
-        st.error("Please provide all inputs: OpenAI API key, content, and keywords.")
+# Main App Workflow
+if st.button("Generate Featured Snippet Content"):
+    if not openai_api_key or not keyword:
+        st.error("Please enter both the OpenAI API key and a keyword.")
     else:
-        st.info("Analysing content and checking Featured Snippet data...")
-        questions = analyse_content(content, keywords)
-        opportunities = {}
+        st.info("Fetching Google's Featured Snippet...")
         
-        for question in questions:
-            st.write(f"**Analysing question:** {question}")
-            snippet = get_serp_data(question)
-            if snippet:
-                st.success(f"Existing Featured Snippet found: {snippet}")
-            else:
-                st.warning("No Featured Snippet found. Generating optimised content...")
-                optimised_content = generate_optimised_content(question, openai_api_key)
-                if optimised_content:
-                    opportunities[question] = optimised_content
-                    st.write(f"**Optimised Content:**\n{optimised_content}")
+        # Get existing featured snippet from Google
+        snippet = get_featured_snippet(keyword)
         
-        if opportunities:
-            st.markdown("### Featured Snippet Opportunities:")
-            for question, content in opportunities.items():
-                st.write(f"**Question:** {question}\n**Optimised Content:** {content}\n")
+        if snippet:
+            st.success(f"Existing Featured Snippet: {snippet}")
+            st.write("#### Generate Optimised Content to Beat This Snippet:")
+        
+            # Use OpenAI to generate optimised content
+            optimised_content = generate_optimised_content(keyword, openai_api_key)
+            if optimised_content:
+                st.write(f"**Optimised Content:**\n{optimised_content}")
+        else:
+            st.warning("No Featured Snippet found. Try a different keyword.")
